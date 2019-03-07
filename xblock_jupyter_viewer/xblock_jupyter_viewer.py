@@ -1,17 +1,22 @@
 """Jupyter Notebook Viewer XBlock"""
 
 import logging
+
 import pkg_resources
-from urllib import urlencode
-
-from django.core.urlresolvers import reverse
-
+from webob import Response
 from xblock.core import XBlock
-from xblock.fields import Scope, String, Integer
+from xblock.fields import Integer, Scope, String
 from xblock.fragment import Fragment
+from xblock.validation import ValidationMessage
+
+from django.http import HttpResponse
 from xblockutils.studio_editable import StudioEditableXBlockMixin
+from xblockutils.resources import ResourceLoader
+
+from .jupyter_utils import process_nb
 
 log = logging.getLogger(__name__)
+LOADER = ResourceLoader(__name__)
 
 
 class JupyterViewerXBlock(XBlock, StudioEditableXBlockMixin):
@@ -20,7 +25,7 @@ class JupyterViewerXBlock(XBlock, StudioEditableXBlockMixin):
     display_name = String(
         display_name="Display Name", default="Jupyter Notebook Viewer",
         scope=Scope.settings,
-        help="Name of this XBlock" 
+        help="Name of this XBlock"
     )
 
     jupyter_url = String(
@@ -58,34 +63,51 @@ class JupyterViewerXBlock(XBlock, StudioEditableXBlockMixin):
         default=500
     )
 
-    editable_fields = ('display_name', 'jupyter_url', 'image_url', 'start_tag', 'end_tag', 'xblock_height')
+    editable_fields = (
+        'display_name',
+        'jupyter_url',
+        'image_url',
+        'start_tag',
+        'end_tag',
+        'xblock_height',
+    )
+
+
+    def validate_field_data(self, validation, data):
+        """
+        Validate data from edit xblock view.
+        """
+        def add_error_msg(msg):
+            """ Add validation error with the passed error message. """
+            validation.add(ValidationMessage(ValidationMessage.ERROR, msg))
+
+
+        if not data.image_url.endswith('/'):
+            add_error_msg(u'Image Root URL must end with a "/" character.')
+
 
     def resource_string(self, path):
-        """Handy helper for getting resources from our kit."""
+        """ Handy helper for getting resources from our kit. """
         data = pkg_resources.resource_string(__name__, path)
         return data.decode("utf8")
 
+
     def student_view(self, context=None):
-        base = reverse('jupyter_nb_viewer') + "?{}"
+        """
+        Xblock student view.
+        """
+        context = {
+            'iframe_height': self.xblock_height
+        }
 
-        # setup start/end tags
-        if self.start_tag != '':
-            base += "&{}".format(urlencode({'start': self.start_tag}))
-        if self.end_tag != '':
-            base += "&{}".format(urlencode({'end': self.end_tag}))
-        # Add Image root
-        base += "&{}".format(urlencode({'images_url': self.image_url}))
+        frag = Fragment(LOADER.render_template('public/html/student_view.html', context))
+        frag.add_javascript_url(
+            self.runtime.local_resource_url(self, 'public/js/xblock_jupyter.js')
+        )
+        frag.initialize_js('initializeIframeSource')
 
-        # setup full url and inject into template iframe
-        full_url = base.format(urlencode({'url': self.jupyter_url}))
-        log.debug("Full URL: {}".format(full_url))
-        base_html = self.resource_string('static/html/student_view.html')\
-            .format(self.xblock_height, full_url)
-        
-        # add html and css
-        frag = Fragment(base_html)
-        # frag.add_css(self.resource_string('static/css/style.css'))
         return frag
+
 
     # TO-DO: change this to create the scenarios you'd like to see in the
     # workbench while developing your XBlock.
@@ -105,3 +127,25 @@ class JupyterViewerXBlock(XBlock, StudioEditableXBlockMixin):
              """),
         ]
 
+
+    @XBlock.handler
+    def xblock_handler_jupyter(self, context=None, suffix=''):
+        """
+        Returns the final Jupyter html view to be embedded inside of iframe tag.
+        """
+        data = {
+            'url': self.jupyter_url,
+            'images_url': self.image_url,
+            'start': self.start_tag,
+            'end': self.end_tag
+        }
+
+        try:
+            html = process_nb(**data)
+
+        except Exception as exc:  # pylint: disable=broad-except
+            log.exception(exc)
+            msg = "{} - Check lms/cms logs for more information".format(exc)
+            return Response(msg, status=500)
+
+        return Response(body=html, content_type='text/html', charset='utf8')

@@ -1,36 +1,59 @@
 import json
-import logging 
+import logging
 
+import pkg_resources
 import requests
+
 import nbformat
-from nbconvert.preprocessors import ExecutePreprocessor, CellExecutionError
 from nbconvert import HTMLExporter
 
-from preprocessors import ImageReplacement, RemoveCustomCSS
-from post_processors import remove_box_shadow, insert_target_blank
-
+from .jinja_templates import get_package_loader
+from .post_processors import insert_target_blank, remove_box_shadow
+from .preprocessors import ImageReplacement, RemoveCustomCSS
 
 log = logging.getLogger(__name__)
 
 
 def fetch_notebook(url):
-    """Fetches the notbook from URL"""
+    """ Fetches the notebook from URL. """
 
     log.info("Fetching URL: {}".format(url))
-    resp = requests.get(url)
-    return resp
+    response = requests.get(url)
+    return response
 
 
 def json_to_nb_format(nb_str):
-    """Converts Notebook JSON to python object"""
-    nb = nbformat.reads(nb_str, as_version=4)
-    return nb
+    """
+    Converts Jupyter Notebook JSON to Notebook node format.
+
+    Notebook format more info: https://nbformat.readthedocs.io/en/latest/
+    """
+
+    notebook_node = nbformat.reads(nb_str, as_version=4)
+    return notebook_node
 
 
-def convert_to_html(nb):
-    """Converts notebook dict to HTML with included CSS"""
-    exporter = HTMLExporter()
-    body, resources = exporter.from_notebook_node(nb)
+def convert_to_html(notebook):
+    """
+    Converts from notebook dict to HTML template.
+
+    More info: https://nbconvert.readthedocs.io/en/latest/nbconvert_library.html
+    """
+
+    loader = get_package_loader()
+    # Get the default Jupyter notebook css, cause, the original returned by resources['inlining']['css'][0],
+    # contains a path to a css.map file, that doesn't exists in this context and error in raised.
+    # Original css file comes from: https://github.com/jupyter/notebook/blob/master/notebook/static/style/style.less
+    notebook_default_css = resource_string('/public/css/jupyter-notebook.min.css')
+
+    # If template_file is not set, loads full.tpl template file by default.
+    exporter = HTMLExporter(extra_loaders=[loader])
+    body, resources = exporter.from_notebook_node(
+        notebook,
+        resources={
+            "notebook_default_css": notebook_default_css
+        }
+    )
 
     return body, resources
 
@@ -58,7 +81,7 @@ def filter_start_end(nb, start_tag=None, end_tag=None):
         log.warning("No cell with start content: {} found".format(end_tag))
 
     nb['cells'] = nb['cells'][start_cell_num:end_cell_num]
-    
+
     return nb
 
 
@@ -70,7 +93,7 @@ def preprocess(nb, processors):
     for cell in gen:
         for t in processors:
             t.process_cell(cell)
-    
+
     # Run finish on each processor
     for t in processors:
         t.finish()
@@ -104,4 +127,7 @@ def process_nb(url, images_url=None, start=None, end=None):
     return html
 
 
-
+def resource_string(path):
+    """ Handy helper for getting resources from our kit. """
+    data = pkg_resources.resource_string(__name__, path)
+    return data.decode("utf8")

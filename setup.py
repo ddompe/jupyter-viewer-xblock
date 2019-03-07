@@ -32,12 +32,13 @@ setup(
         'XBlock',
         'nbconvert',
         'nbformat',
-        'requests'
+        'requests',
+        'Jinja2==2.10'
     ],
     entry_points={
         'xblock.v1': [
             'xblock_jupyter_viewer = xblock_jupyter_viewer:JupyterViewerXBlock',
         ]
     },
-    package_data=package_data("xblock_jupyter_viewer", ["static", "public", "rest"]),
+    package_data=package_data("xblock_jupyter_viewer", ["static", "public"]),
 )
