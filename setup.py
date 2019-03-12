@@ -55,5 +55,5 @@ setup(
             'xblock_jupyter_viewer = xblock_jupyter_viewer:JupyterViewerXBlock',
         ]
     },
-    package_data=package_data("xblock_jupyter_viewer", ["static", "public"]),
+    package_data=package_data("xblock_jupyter_viewer", ["static", "public", "templates"]),
 )
