@@ -1,6 +1,7 @@
-"""Setup for xblocktimetracker XBlock."""
+"""Setup for jupyter-viewer-xblock XBlock."""
 
 import os
+import re
 from setuptools import setup
 
 
@@ -20,9 +21,23 @@ def package_data(pkg, roots):
     return {pkg: data}
 
 
+def get_version():
+    """
+    Retrives the version string from: xblock_jupyter_viewer/__init__.py.
+    """
+    file_path = os.path.join('xblock_jupyter_viewer', '__init__.py')
+    initfile_lines = open(file_path, 'rt').readlines()
+    version_regex = r"^__version__ = ['\"]([^'\"]*)['\"]"
+    for line in initfile_lines:
+        match_string = re.search(version_regex, line, re.M)
+        if match_string:
+            return match_string.group(1)
+    raise RuntimeError('Unable to find version string in %s.' % (file_path,))
+
+
 setup(
     name='xblock_jupyter_viewer',
-    version='1.0',
+    version=get_version(),
     description='View Jupyter Notebooks in your XBlock',
     license='UNKNOWN',          # TODO: choose a license: 'AGPL v3' and 'Apache 2.0' are popular.
     packages=[
